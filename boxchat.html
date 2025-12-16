@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Cộng Đồng Online</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Tùy chỉnh thanh cuộn */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .message-anim {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Màn hình lỗi */
+        #error-overlay {
+            display: none;
+        }
+        #error-overlay.visible {
+            display: flex;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 h-screen flex flex-col items-center justify-center font-sans overflow-hidden">
+
+    <!-- Màn hình báo lỗi (Ẩn mặc định) -->
+    <div id="error-overlay" class="fixed inset-0 bg-red-50 z-[100] flex-col items-center justify-center p-6 text-center">
+        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-red-100">
+            <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="alert-triangle" class="w-8 h-8"></i>
+            </div>
+            <h2 class="text-xl font-bold text-gray-800 mb-2">Đã xảy ra lỗi</h2>
+            <p id="error-message" class="text-gray-600 mb-6 text-sm font-mono bg-gray-100 p-2 rounded break-all">
+                Đang tải...
+            </p>
+            <button onclick="location.reload()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                Tải lại trang
+            </button>
+        </div>
+    </div>
+
+    <!-- Container Chính -->
+    <div class="w-full h-full md:max-w-md md:h-[90vh] bg-white md:rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
+        
+        <!-- Header -->
+        <header class="bg-blue-600 text-white p-4 flex items-center justify-between shadow-md z-10">
+            <div class="flex items-center gap-2">
+                <i data-lucide="message-circle" class="w-6 h-6"></i>
+                <h1 class="font-bold text-lg">Chat Cộng Đồng</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span class="text-xs font-medium opacity-90">Online</span>
+                <button onclick="changeName()" class="ml-2 p-1 hover:bg-blue-700 rounded text-xs border border-blue-400">
+                    Đổi tên
+                </button>
+            </div>
+        </header>
+
+        <!-- Khu vực hiển thị tin nhắn -->
+        <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 scroll-smooth">
+            <!-- Tin nhắn sẽ được render ở đây bằng JS -->
+            <div class="flex justify-center mt-10">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        </div>
+
+        <!-- Khu vực nhập tin nhắn -->
+        <div class="p-3 bg-white border-t border-gray-200">
+            <form id="chat-form" class="flex items-end gap-2">
+                <div class="flex-1 bg-gray-100 rounded-2xl px-4 py-2 focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+                    <input type="text" id="message-input" 
+                        class="w-full bg-transparent border-none outline-none text-gray-700 placeholder-gray-400"
+                        placeholder="Nhập tin nhắn..." autocomplete="off">
+                </div>
+                <button type="submit" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i data-lucide="send" class="w-5 h-5 ml-0.5"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Nhập Tên (Hiển thị lần đầu) -->
+    <div id="name-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-80 transform transition-all scale-100">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i data-lucide="user" class="w-8 h-8"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800">Chào mừng bạn!</h2>
+                <p class="text-sm text-gray-500">Vui lòng nhập tên hiển thị để bắt đầu chat.</p>
+            </div>
+            <form id="name-form" class="space-y-4">
+                <input type="text" id="username-input" required maxlength="15"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-center font-medium"
+                    placeholder="Tên của bạn (VD: Huy)">
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium transition-colors">
+                    Tham gia Chat
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Hàm Báo Lỗi UI ---
+        function showError(msg) {
+            const overlay = document.getElementById('error-overlay');
+            const msgEl = document.getElementById('error-message');
+            if (overlay && msgEl) {
+                msgEl.textContent = msg;
+                overlay.classList.add('visible');
+                lucide.createIcons();
+            }
+            console.error(msg);
+        }
+
+        // ⚠️ CẤU HÌNH CHO SUBLIME TEXT / CHẠY LOCAL ⚠️
+        // 1. Vào Firebase Console (console.firebase.google.com) -> Tạo Project mới
+        // 2. Vào Project Settings -> General -> Kéo xuống chọn icon Web (</>) để tạo app
+        // 3. Copy phần "firebaseConfig" và dán đè vào bên dưới:
+        const firebaseConfig = {
+            apiKey: "AIzaSyBWer_NITKGfVKHrI2Lo7_l9ynBSVhgOKI",
+            authDomain: "flappy-bird-rank.firebaseapp.com",
+            projectId: "flappy-bird-rank",
+            storageBucket: "flappy-bird-rank.firebasestorage.app",
+            messagingSenderId: "174372209514",
+            appId: "1:174372209514:web:70faa11e2684542ed61b13"
+        };
+        
+        // Tên phòng chat (bạn có thể đổi tùy ý để tạo phòng riêng)
+        const appId = 'my-chat-room-v1';
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            
+            // --- Biến Trạng Thái ---
+            let currentUser = null;
+            let username = localStorage.getItem('chat_username') || '';
+            const messagesContainer = document.getElementById('messages-container');
+            const chatForm = document.getElementById('chat-form');
+            const messageInput = document.getElementById('message-input');
+            const nameModal = document.getElementById('name-modal');
+            const nameForm = document.getElementById('name-form');
+            const usernameInput = document.getElementById('username-input');
+
+            // --- Khởi tạo Icons ---
+            lucide.createIcons();
+
+            // --- Hàm Xử Lý Logic ---
+
+            // 1. Khởi tạo Auth
+            const initAuth = async () => {
+                try {
+                    // Đăng nhập ẩn danh (Không cần đăng ký)
+                    await signInAnonymously(auth);
+                } catch (error) {
+                    showError("Lỗi đăng nhập (Kiểm tra lại config Firebase đã điền đúng chưa): " + error.message);
+                }
+            };
+
+            // 2. Xử lý UI Tên Người Dùng
+            function checkUsername() {
+                if (!username) {
+                    nameModal.classList.remove('hidden');
+                    setTimeout(() => usernameInput.focus(), 100);
+                } else {
+                    nameModal.classList.add('hidden');
+                    initChat(); // Bắt đầu load tin nhắn nếu đã có tên
+                }
+            }
+
+            // Đổi tên (Global scope function)
+            window.changeName = () => {
+                localStorage.removeItem('chat_username');
+                username = '';
+                location.reload();
+            };
+
+            nameForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const name = usernameInput.value.trim();
+                if (name) {
+                    username = name;
+                    localStorage.setItem('chat_username', username);
+                    nameModal.classList.add('hidden');
+                    initChat();
+                }
+            });
+
+            // 3. Render Tin Nhắn
+            function renderMessages(messages) {
+                messagesContainer.innerHTML = '';
+                
+                if (messages.length === 0) {
+                    messagesContainer.innerHTML = `
+                        <div class="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
+                            <i data-lucide="message-square" class="w-12 h-12 mb-2"></i>
+                            <p>Chưa có tin nhắn nào. Hãy bắt đầu!</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let lastSenderId = null;
+
+                messages.forEach(msg => {
+                    // Safety check: Đảm bảo dữ liệu tồn tại
+                    const senderName = msg.sender || 'Ẩn danh';
+                    const msgText = msg.text || '(Tin nhắn trống)';
+                    const msgUid = msg.uid || 'unknown';
+
+                    const isMe = currentUser && msgUid === currentUser.uid;
+                    const date = msg.timestamp ? new Date(msg.timestamp) : new Date();
+                    const timeString = date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    
+                    // Nhóm tin nhắn liên tiếp
+                    const isSequence = lastSenderId === msgUid;
+                    lastSenderId = msgUid;
+
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} message-anim mb-1`;
+                    
+                    // Avatar logic an toàn hơn
+                    const showAvatar = !isMe && !isSequence;
+                    const spacer = !isMe && isSequence ? 'ml-9' : '';
+
+                    let html = '';
+                    
+                    if (!isMe) {
+                        html += `<div class="flex items-end max-w-[85%] ${spacer}">`;
+                        if (showAvatar) {
+                            // Tạo màu avatar dựa trên tên (an toàn)
+                            const colorHash = senderName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                            const colors = ['bg-red-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500'];
+                            const bgClass = colors[colorHash % colors.length];
+                            const initial = senderName.charAt(0).toUpperCase();
+                            
+                            html += `
+                                <div class="w-7 h-7 rounded-full ${bgClass} text-white flex items-center justify-center text-xs font-bold mr-2 shadow-sm shrink-0 mb-1">
+                                    ${initial}
+                                </div>
+                            `;
+                        }
+                    } else {
+                        html += `<div class="max-w-[85%] flex flex-col items-end">`;
+                    }
+
+                    // Bubble tin nhắn
+                    const bubbleClass = isMe 
+                        ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' 
+                        : 'bg-white text-gray-800 border border-gray-200 rounded-2xl rounded-tl-sm shadow-sm';
+                    
+                    html += `
+                        <div class="${bubbleClass} px-4 py-2 break-words text-sm relative group">
+                            ${!isMe && !isSequence ? `<p class="text-[10px] font-bold text-gray-500 mb-0.5 opacity-75">${escapeHtml(senderName)}</p>` : ''}
+                            <p class="leading-relaxed">${escapeHtml(msgText)}</p>
+                            <p class="text-[9px] mt-1 opacity-60 ${isMe ? 'text-blue-100 text-right' : 'text-gray-400'}">${timeString}</p>
+                        </div>
+                    </div>`; 
+
+                    msgDiv.innerHTML = html;
+                    messagesContainer.appendChild(msgDiv);
+                });
+
+                scrollToBottom();
+                lucide.createIcons();
+            }
+
+            function scrollToBottom() {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            function escapeHtml(text) {
+                if (!text) return '';
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            // 4. Logic Firestore
+            function initChat() {
+                if (!currentUser) return;
+
+                try {
+                    // Dùng đường dẫn messages chuẩn cho local
+                    const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
+                    
+                    onSnapshot(messagesRef, (snapshot) => {
+                        const messages = [];
+                        snapshot.forEach(doc => {
+                            messages.push({ id: doc.id, ...doc.data() });
+                        });
+                        messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                        renderMessages(messages);
+                    }, (error) => {
+                        showError("Mất kết nối dữ liệu: " + error.message);
+                    });
+                } catch (e) {
+                    showError("Lỗi khởi tạo chat: " + e.message);
+                }
+            }
+
+            // Xử lý gửi tin
+            chatForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const text = messageInput.value.trim();
+                
+                if (!text || !currentUser || !username) return;
+
+                messageInput.value = '';
+                messageInput.focus();
+
+                try {
+                    const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
+                    await addDoc(messagesRef, {
+                        text: text,
+                        sender: username,
+                        uid: currentUser.uid,
+                        timestamp: Date.now()
+                    });
+                    scrollToBottom();
+                } catch (error) {
+                    console.error("Lỗi gửi tin nhắn:", error);
+                    alert("Lỗi gửi tin: " + error.message);
+                }
+            });
+
+            // 5. Khởi chạy
+            initAuth();
+            
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    checkUsername(); 
+                } else {
+                    currentUser = null;
+                }
+            }, (error) => {
+                showError("Lỗi trạng thái Auth: " + error.message);
+            });
+
+        } catch (globalError) {
+            showError("Lỗi nghiêm trọng: " + globalError.message);
+        }
+
+    </script>
+</body>
+</html>
